@@ -3,14 +3,14 @@
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-red.svg)](https://streamlit.io/)
 [![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://www.docker.com/)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4-green.svg)](https://openai.com/)
+[![Gemini](https://img.shields.io/badge/Google-Gemini-blue.svg)](https://ai.google.dev/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **An intelligent, AI-powered data analysis platform that transforms natural language queries into comprehensive data insights, visualizations, and reports.**
 
 ## 🌟 Overview
 
-The **Agentic Data Analyzer** is a cutting-edge data analysis application that leverages Microsoft's AutoGen framework and OpenAI's GPT models to provide intelligent, conversational data analysis. Simply upload your CSV data, ask questions in natural language, and receive automated insights complete with visualizations, statistical analysis, and actionable recommendations.
+The **Agentic Data Analyzer** is a cutting-edge data analysis application that leverages Microsoft's AutoGen framework and Google's Gemini models to provide intelligent, conversational data analysis.
 
 ### 🎯 Key Highlights
 
@@ -123,7 +123,7 @@ agentic-data-analyzer/
 
 - **Python 3.8+** 
 - **Docker Desktop** (running)
-- **OpenAI API Key**
+- **Google Gemini API Key**
 - **Git** (for cloning)
 
 ### 🔧 Installation
@@ -167,7 +167,7 @@ agentic-data-analyzer/
    
    Create `.env` file in project root:
    ```env
-   OPENAI_API_KEY=your_openai_api_key_here
+   GEMINI_API_KEY=your_gemini_api_key_here
    ```
 
 6. **Launch application**
@@ -224,7 +224,7 @@ agentic-data-analyzer/
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `OPENAI_API_KEY` | Your OpenAI API key | ✅ Yes |
+| `GEMINI_API_KEY` | Your Google Gemini API key | ✅ Yes |
 | `DOCKER_IMAGE` | Custom Docker image name | ❌ Optional |
 
 ### Docker Configuration
@@ -278,7 +278,7 @@ docker build -t agentic-analyzer-custom .
 | Issue | Solution |
 |-------|----------|
 | **Docker not starting** | Ensure Docker Desktop is running |
-| **OpenAI API errors** | Check API key in `.env` file |
+| **Gemini API errors** | Check API key in `.env` file |
 | **Package installation fails** | Use virtual environment |
 | **Streamlit port conflict** | Use `--server.port 8502` |
 | **Memory issues** | Increase Docker memory allocation |
@@ -330,14 +330,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - **Microsoft AutoGen**: Multi-agent conversation framework
-- **OpenAI**: GPT models for intelligent analysis
+- **Google Gemini**: Advanced AI models for intelligent analysis
 - **Streamlit**: Beautiful web application framework
 - **Docker**: Containerization and security
 - **Python Data Science Stack**: pandas, matplotlib, numpy, seaborn
 
 ## 📞 Support
 
-- **📧 Email**: [sahil070402@gmail.com](mailto:sahil070402@gmail.com)
+- **📧 Email**: [sahilsareen0007@gmail.com](mailto:sahilsareen0007@gmail.com)
 - **🐛 Issues**: [GitHub Issues](https://github.com/Sahil070402/Agentic-Data-Analyzer/issues)
 - **💬 Discussions**: [GitHub Discussions](https://github.com/Sahil070402/Agentic-Data-Analyzer/discussions)
 
