@@ -1,5 +1,13 @@
 # 🚀 Agentic Data Analyzer
 
+## 🎥 Project Demo
+
+📹 **YouTube Demo**: [Watch the full project demonstration](https://youtu.be/FUq9uU5Zc_E)
+
+📁 **Google Drive Demo**: [Download demo video](https://drive.google.com/file/d/1SJtSULnX44sQasS7kMVPqfH3sX8k1Nnd/view?usp=sharing)
+
+---
+
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28%2B-red.svg)](https://streamlit.io/)
 [![Docker](https://img.shields.io/badge/Docker-Required-blue.svg)](https://www.docker.com/)
