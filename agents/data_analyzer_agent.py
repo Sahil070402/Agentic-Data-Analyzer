@@ -34,7 +34,12 @@ pip install pandas numpy matplotlib
 5. If the code ran successfully, then analyze the output and continue as needed. 
 
 6. If the user asks for a graph or plot, save it with a descriptive filename ending in `.png`. For example, a graph about survival rates should be named `survival_rates.png`. Do NOT use a generic name like `output.png`.
+
+6.1.By default display a  detailed summary table and save it with a descriptive filename ending in `.csv`. For example, a graph about survival rates should be named `survival_rates.csv`. Do NOT use a generic name like `output.csv`.
+
 7. If the user asks for a table rows in csv or json, save it with a descriptive filename ending in `.csv` or `.json`  depending on the file
+
+8.At the end give the detail analysis addressing the user's query.
 
 Once we have completed all the task, please mention 'STOP' after explaning in depth the final answer.
 

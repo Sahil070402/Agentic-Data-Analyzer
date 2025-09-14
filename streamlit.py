@@ -6,6 +6,7 @@ import glob
 import zipfile
 import uuid
 import time
+import pandas as pd
 from io import BytesIO
 from models.openai_model_client import get_model_client
 from teams.analyzer_gpt import getDataAnalyzerTeam
@@ -111,7 +112,7 @@ def get_session_files(temp_dir, files_before, session_start_time):
     return session_files
 
 def create_export_zip(temp_dir, session_files):
-    """Create a ZIP file containing session files."""
+    """Create a ZIP file containing session files, converting CSV files to JSON format."""
     if not session_files:
         return None
     
@@ -120,7 +121,24 @@ def create_export_zip(temp_dir, session_files):
         for file_name in session_files:
             file_path = os.path.join(temp_dir, file_name)
             if os.path.exists(file_path):
-                zip_file.write(file_path, file_name)
+                # Check if it's a CSV file that should be converted to JSON
+                if file_name.endswith('.csv') and not file_name.startswith('tmp_') and not file_name.endswith('_full.csv'):
+                    try:
+                        # Read CSV and convert to JSON
+                        df = pd.read_csv(file_path)
+                        json_data = df.to_json(orient='records', indent=2)
+                        
+                        # Create new filename with .json extension
+                        json_filename = file_name.replace('.csv', '.json')
+                        
+                        # Add JSON data to ZIP
+                        zip_file.writestr(json_filename, json_data)
+                    except Exception as e:
+                        # If conversion fails, include original CSV file
+                        zip_file.write(file_path, file_name)
+                else:
+                    # For non-CSV files (PNG, JSON, etc.), add as-is
+                    zip_file.write(file_path, file_name)
     
     zip_buffer.seek(0)
     return zip_buffer.getvalue()
@@ -165,6 +183,187 @@ def cleanup_all_temp_files(temp_dir):
             failed_files.append(f"{file_name}: {str(e)}")
     
     return deleted_count, failed_files
+
+def display_csv_data_file(file_path, file_name):
+    """Display a CSV data file as a scrollable dataframe in chat."""
+    try:
+        # Read the CSV file
+        df = pd.read_csv(file_path)
+        
+        # Display file info
+        st.markdown(f"### 📄 **{file_name}**")
+        
+        # Show basic metrics
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("📊 Rows", len(df))
+        with col2:
+            st.metric("📋 Columns", len(df.columns))
+        
+        # Calculate adaptive height based on data size
+        row_height = 35    # Approximate height per row
+        header_height = 40 # Header height
+        padding = 20       # Extra padding for better appearance
+        
+        # Calculate the natural height needed for the data
+        natural_height = header_height + (len(df) * row_height) + padding
+        
+        # For small datasets (<=10 rows), use natural height with minimal constraints
+        # For larger datasets, use scrollable height with reasonable bounds
+        if len(df) <= 10:
+            # Small datasets: use natural height, minimum 120px for very small tables
+            table_height = max(120, natural_height)
+        else:
+            # Large datasets: use scrollable height between 200px and 600px
+            min_height = 200
+            max_height = 600
+            table_height = max(min_height, min(natural_height, max_height))
+        
+        # Display the dataframe with adaptive height
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=False,
+            height=table_height
+        )
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error displaying CSV file {file_name}: {str(e)}")
+        return False
+
+def display_analysis_results_with_data_files(temp_dir, session_files, final_analyzer_message, chat_id):
+    """Display analysis results with data files first, then charts, then explain button."""
+    
+    # Filter session files by type
+    session_csv_files = [f for f in session_files if f.endswith('.csv') and not f.startswith('tmp_') and not f.endswith('_full.csv')]
+    session_png_files = [f for f in session_files if f.endswith('.png')]
+    
+    # Create unique analysis ID for this specific analysis
+    analysis_id = f"{chat_id}_{len(st.session_state.messages)}"
+    
+    # Store CSV data and analysis text for persistent access with unique analysis ID
+    if session_csv_files:
+        # Store CSV data in session state for persistent access with unique key
+        csv_data_key = f"csv_data_{analysis_id}"
+        st.session_state[csv_data_key] = {}
+        
+        for csv_file in session_csv_files:
+            csv_path = os.path.join(temp_dir, csv_file)
+            if os.path.exists(csv_path):
+                try:
+                    df = pd.read_csv(csv_path)
+                    st.session_state[csv_data_key][csv_file] = df
+                except Exception as e:
+                    st.session_state[csv_data_key][csv_file] = f"Error reading file: {str(e)}"
+    
+    # Store analysis text for persistent access with unique key
+    analysis_key = f"analysis_text_{analysis_id}"
+    st.session_state[analysis_key] = final_analyzer_message
+    
+    # 1. Display CSV data files first
+    if session_csv_files:
+        with st.chat_message("assistant", avatar="📊"):
+            st.markdown("## 📋 **Generated Data Files**")
+            
+            for csv_file in session_csv_files:
+                csv_path = os.path.join(temp_dir, csv_file)
+                if os.path.exists(csv_path):
+                    display_csv_data_file(csv_path, csv_file)
+                    st.markdown("---")
+        
+        # Save CSV data to chat history with special marker for persistent display
+        csv_message = {
+            "role": "assistant", 
+            "content": f"CSV_DATA_DISPLAY:{analysis_id}",
+            "message_type": "csv_data"
+        }
+        st.session_state.messages.append(csv_message)
+    
+    # 2. Display charts second
+    if session_png_files:
+        with st.chat_message("assistant", avatar="📈"):
+            st.success("📊 **Charts generated successfully!**")
+            
+            # Create content for chat history (without base64 images)
+            image_content_for_chat = "📊 **Charts generated successfully!**\n\n"
+            
+            for image_file in session_png_files:
+                image_path = os.path.join(temp_dir, image_file)
+                if os.path.exists(image_path):
+                    img_b64 = get_image_b64(image_path)
+                    st.image(f"data:image/png;base64,{img_b64}", caption=image_file)
+                    
+                    # Add image info to chat content (without base64)
+                    image_content_for_chat += f"- 📈 **{image_file}** (Chart generated)\n"
+            
+            # Save image info to chat history (without base64 data)
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": image_content_for_chat
+            })
+    
+    # 3. Display explain button last (after both CSV data and charts)
+    if session_csv_files or session_png_files:  # Show explain button if we have any results
+        with st.chat_message("assistant", avatar="💡"):
+            st.info("📖 **Explain Analysis** - Click to view detailed analysis explanation")
+        
+        explain_message = {
+            "role": "assistant", 
+            "content": f"EXPLAIN_BUTTON:{analysis_id}",
+            "message_type": "explain_button"
+        }
+        st.session_state.messages.append(explain_message)
+
+def display_csv_preview(uploaded_file):
+    """Display a preview of the uploaded CSV file."""
+    try:
+        # Read the CSV file
+        df = pd.read_csv(uploaded_file)
+        
+        # Display basic info
+        st.subheader("📋 Data Preview")
+        
+        # File info
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Rows", len(df))
+        with col2:
+            st.metric("Columns", len(df.columns))
+        
+        # Data preview (first 5 rows)
+        st.write("**🔍 Sample Data (First 5 rows):**")
+        preview_df = df.head(5)
+        
+        # Display with better formatting
+        st.dataframe(
+            preview_df,
+            use_container_width=True,
+            hide_index=True,
+            height=200
+        )
+        
+        # Data types info
+        with st.expander("📈 Column Details"):
+            col_info = []
+            for col in df.columns:
+                dtype = str(df[col].dtype)
+                null_count = df[col].isnull().sum()
+                col_info.append({
+                    "Column": col,
+                    "Type": dtype,
+                    "Null Values": null_count
+                })
+            
+            info_df = pd.DataFrame(col_info)
+            st.dataframe(info_df, use_container_width=True, hide_index=True)
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error reading CSV file: {str(e)}")
+        return False
 
 # --- Main Application ---
 st.title("📊 Agentic Data Analyzer")
@@ -272,22 +471,37 @@ with st.sidebar:
     
     # --- Setup Section ---
     st.header("📊 Setup")
-    uploaded_file = st.file_uploader("1. Upload your CSV file", type="csv")
-    user_question = st.text_area(
-        "2. Ask a question about your data", 
-        height=100,
-        help="Enter your data analysis question here. You can write longer, more detailed queries."
-    )
-    analyze_button = st.button("Analyze Data")
     
-    # Update current chat with uploaded file name
-    if uploaded_file is not None and st.session_state.current_chat_id in st.session_state.chats:
-        current_chat = st.session_state.chats[st.session_state.current_chat_id]
-        if current_chat.get("uploaded_file_name") != uploaded_file.name:
-            current_chat["uploaded_file_name"] = uploaded_file.name
-            # Update chat name if it's still default
-            if current_chat["name"] == "New Chat":
-                current_chat["name"] = f"Analysis: {uploaded_file.name}"
+    # Step 1: CSV Upload
+    uploaded_file = st.file_uploader("1. Upload your CSV file", type="csv")
+    
+    # Step 2: CSV Preview (only show if file is uploaded)
+    if uploaded_file is not None:
+        # Update current chat with uploaded file name
+        if st.session_state.current_chat_id in st.session_state.chats:
+            current_chat = st.session_state.chats[st.session_state.current_chat_id]
+            if current_chat.get("uploaded_file_name") != uploaded_file.name:
+                current_chat["uploaded_file_name"] = uploaded_file.name
+                # Update chat name if it's still default
+                if current_chat["name"] == "New Chat":
+                    current_chat["name"] = f"Analysis: {uploaded_file.name}"
+        
+        # Display CSV preview in sidebar
+        st.markdown("---")
+        display_csv_preview(uploaded_file)
+        
+        # Step 3: Query Input (only show after CSV is uploaded and previewed)
+        st.markdown("---")
+        user_question = st.text_area(
+            "2. Ask a question about your data", 
+            height=100,
+            help="Enter your data analysis question here. You can write longer, more detailed queries."
+        )
+        analyze_button = st.button("Analyze Data")
+    else:
+        # Initialize empty variables when no file is uploaded
+        user_question = ""
+        analyze_button = False
     
     # Generate Suggestions button (only show if CSV and query are available)
     if uploaded_file is not None and user_question:
@@ -412,9 +626,109 @@ with st.sidebar:
 st.header("💬 Analysis Chat")
 
 # --- Chat Display ---
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for i, message in enumerate(st.session_state.messages):
+    message_content = message["content"]
+    message_type = message.get("message_type", "normal")
+    
+    # Handle special message types
+    if message_type == "csv_data":
+        # Display CSV data from session state
+        chat_id = message_content.replace("CSV_DATA_DISPLAY:", "")
+        csv_data_key = f"csv_data_{chat_id}"
+        
+        if csv_data_key in st.session_state and st.session_state[csv_data_key]:
+            with st.chat_message("assistant", avatar="📊"):
+                st.markdown("## 📋 **Generated Data Files**")
+                
+                for csv_file, csv_data in st.session_state[csv_data_key].items():
+                    if isinstance(csv_data, pd.DataFrame):
+                        # Display file info
+                        st.markdown(f"### 📄 **{csv_file}**")
+                        
+                        # Show basic metrics
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("📊 Rows", len(csv_data))
+                        with col2:
+                            st.metric("📋 Columns", len(csv_data.columns))
+                        
+                        # Calculate adaptive height based on data size
+                        row_height = 35    # Approximate height per row
+                        header_height = 40 # Header height
+                        padding = 20       # Extra padding for better appearance
+                        
+                        # Calculate the natural height needed for the data
+                        natural_height = header_height + (len(csv_data) * row_height) + padding
+                        
+                        # For small datasets (<=10 rows), use natural height with minimal constraints
+                        # For larger datasets, use scrollable height with reasonable bounds
+                        if len(csv_data) <= 10:
+                            # Small datasets: use natural height, minimum 120px for very small tables
+                            table_height = max(120, natural_height)
+                        else:
+                            # Large datasets: use scrollable height between 200px and 600px
+                            min_height = 200
+                            max_height = 600
+                            table_height = max(min_height, min(natural_height, max_height))
+                        
+                        # Display the dataframe with adaptive height
+                        st.dataframe(
+                            csv_data,
+                            use_container_width=True,
+                            hide_index=False,
+                            height=table_height
+                        )
+                        st.markdown("---")
+                    else:
+                        st.error(f"Error with {csv_file}: {csv_data}")
+    
+    elif message_type == "explain_button":
+        # Display explain button with functionality
+        chat_id = message_content.replace("EXPLAIN_BUTTON:", "")
+        analysis_key = f"analysis_text_{chat_id}"
+        
+        with st.chat_message("assistant", avatar="💡"):
+            st.info("📖 **Explain Analysis** - Click to view detailed analysis explanation")
+            
+            # Create unique button key for this message
+            button_key = f"explain_btn_{chat_id}_{i}"
+            
+            if st.button("📖 Explain Analysis", key=button_key, use_container_width=True):
+                # Display the detailed analysis
+                if analysis_key in st.session_state and st.session_state[analysis_key]:
+                    with st.chat_message("assistant", avatar="🔍"):
+                        st.markdown("## 📖 **Detailed Analysis Explanation**")
+                        st.markdown(st.session_state[analysis_key])
+                else:
+                    st.error("Analysis explanation not available.")
+    
+    else:
+        # Handle normal messages
+        with st.chat_message(message["role"]):
+            # Check if this is an image content message and try to display images
+            if "Charts generated successfully!" in message_content and message["role"] == "assistant":
+                st.markdown(message_content)
+                
+                # Extract image file names from the message content instead of scanning temp directory
+                # This prevents showing all images from temp directory
+                lines = message_content.split('\n')
+                for line in lines:
+                    if line.strip().startswith('- 📈 **') and line.strip().endswith('** (Chart generated)'):
+                        # Extract filename from the line format: "- 📈 **filename.png** (Chart generated)"
+                        start_idx = line.find('**') + 2
+                        end_idx = line.rfind('**')
+                        if start_idx < end_idx:
+                            png_file = line[start_idx:end_idx]
+                            temp_dir = "temp"
+                            png_path = os.path.join(temp_dir, png_file)
+                            if os.path.exists(png_path):
+                                try:
+                                    img_b64 = get_image_b64(png_path)
+                                    st.image(f"data:image/png;base64,{img_b64}", caption=png_file)
+                                except Exception as e:
+                                    st.caption(f"📈 {png_file} (Image file exists but cannot be displayed)")
+            else:
+                st.markdown(message_content)
 
 # --- Handle Refined Query from Suggestions ---
 if st.session_state.refined_query and uploaded_file is not None:
@@ -468,47 +782,68 @@ if st.session_state.refined_query and uploaded_file is not None:
         try:
             await start_docker_container(docker)
 
+            # Progress tracking variables
+            progress_placeholder = st.empty()
+            progress_steps = [
+                "🔄 Initializing analysis...",
+                "📊 Data Analyzer is planning the approach...",
+                "🐍 Executing Python code...",
+                "📈 Processing results...",
+                "✅ Analysis complete!"
+            ]
+            current_step = 0
+            
+            # Show initial progress
+            with progress_placeholder.container():
+                st.info(progress_steps[current_step])
+            
+            # Track messages for final analysis
+            final_analyzer_message = None
+            
             async for message in team.run_stream(task=full_task):
                 if isinstance(message, TextMessage) and message.source != "user":
                     agent_name = message.source
                     
-                    # Map agent names to avatars
-                    avatar_map = {
-                        "Data_Analyzer_agent": "📊",
-                        "Python_Code_Executor": "🐍"
-                    }
-                    avatar = avatar_map.get(agent_name, "🤖")
-
-                    with st.chat_message(agent_name, avatar=avatar):
-                        st.markdown(message.content)
-                    st.session_state.messages.append({"role": agent_name, "content": message.content})
+                    # Update progress based on agent activity
+                    if agent_name == "Data_Analyzer_agent":
+                        current_step = min(current_step + 1, len(progress_steps) - 2)
+                        # Clean the analyzer message by removing "STOP" and extra whitespace
+                        cleaned_content = message.content.replace("STOP", "").strip()
+                        final_analyzer_message = cleaned_content  # Keep updating with latest analyzer message
+                    elif agent_name == "Python_Code_Executor":
+                        current_step = min(current_step + 1, len(progress_steps) - 2)
+                    
+                    # Update progress display
+                    if current_step < len(progress_steps) - 1:
+                        with progress_placeholder.container():
+                            st.info(progress_steps[current_step])
 
                 elif isinstance(message, TaskResult):
                     if message.stop_reason:
+                        # Show final progress
+                        current_step = len(progress_steps) - 1
+                        with progress_placeholder.container():
+                            st.success(progress_steps[current_step])
+                        
+                        # Display the final detailed analysis using new format
+                        if final_analyzer_message:
+                            # Get session-specific files
+                            session_files = get_session_files(temp_dir, st.session_state.files_before_analysis, st.session_state.session_start_time)
+                            st.session_state.session_files = session_files
+                            
+                            # Use new display function that shows CSV data first, then explain button
+                            display_analysis_results_with_data_files(temp_dir, session_files, final_analyzer_message, st.session_state.current_chat_id)
+                        
+                        # Add completion message
                         with st.chat_message("assistant"):
-                            st.info(f"Task finished. Reason: {message.stop_reason}")
-                        st.session_state.messages.append({"role": "assistant", "content": f"Task finished. Reason: {message.stop_reason}"})
+                            st.success("✅ **Analysis completed successfully!**")
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": "✅ **Analysis completed successfully!**"
+                        })
 
             # Save the state after the run
             st.session_state.team_state = await team.save_state()
-
-            # Get session-specific files
-            session_files = get_session_files(temp_dir, st.session_state.files_before_analysis, st.session_state.session_start_time)
-            st.session_state.session_files = session_files
-            
-            # Display only PNG files from current session
-            session_png_files = [f for f in session_files if f.endswith('.png')]
-            if session_png_files:
-                st.success("Graph(s) generated successfully!")
-                for image_file in session_png_files:
-                    image_path = os.path.join(temp_dir, image_file)
-                    img_b64 = get_image_b64(image_path)
-                    st.image(f"data:image/png;base64,{img_b64}", caption=image_file)
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": f"![{image_file}](data:image/png;base64,{img_b64})"})
-            else:
-                st.warning("The analysis finished, but no graphs were generated.")
             
             # Force UI refresh to show export panel immediately
             if session_files:
@@ -572,47 +907,68 @@ elif analyze_button and uploaded_file is not None and user_question:
         try:
             await start_docker_container(docker)
 
+            # Progress tracking variables
+            progress_placeholder = st.empty()
+            progress_steps = [
+                "🔄 Initializing analysis...",
+                "📊 Data Analyzer is planning the approach...",
+                "🐍 Executing Python code...",
+                "📈 Processing results...",
+                "✅ Analysis complete!"
+            ]
+            current_step = 0
+            
+            # Show initial progress
+            with progress_placeholder.container():
+                st.info(progress_steps[current_step])
+            
+            # Track messages for final analysis
+            final_analyzer_message = None
+            
             async for message in team.run_stream(task=full_task):
                 if isinstance(message, TextMessage) and message.source != "user":
                     agent_name = message.source
                     
-                    # Map agent names to avatars
-                    avatar_map = {
-                        "Data_Analyzer_agent": "📊",
-                        "Python_Code_Executor": "🐍"
-                    }
-                    avatar = avatar_map.get(agent_name, "🤖")
-
-                    with st.chat_message(agent_name, avatar=avatar):
-                        st.markdown(message.content)
-                    st.session_state.messages.append({"role": agent_name, "content": message.content})
+                    # Update progress based on agent activity
+                    if agent_name == "Data_Analyzer_agent":
+                        current_step = min(current_step + 1, len(progress_steps) - 2)
+                        # Clean the analyzer message by removing "STOP" and extra whitespace
+                        cleaned_content = message.content.replace("STOP", "").strip()
+                        final_analyzer_message = cleaned_content  # Keep updating with latest analyzer message
+                    elif agent_name == "Python_Code_Executor":
+                        current_step = min(current_step + 1, len(progress_steps) - 2)
+                    
+                    # Update progress display
+                    if current_step < len(progress_steps) - 1:
+                        with progress_placeholder.container():
+                            st.info(progress_steps[current_step])
 
                 elif isinstance(message, TaskResult):
                     if message.stop_reason:
+                        # Show final progress
+                        current_step = len(progress_steps) - 1
+                        with progress_placeholder.container():
+                            st.success(progress_steps[current_step])
+                        
+                        # Display the final detailed analysis using new format
+                        if final_analyzer_message:
+                            # Get session-specific files
+                            session_files = get_session_files(temp_dir, st.session_state.files_before_analysis, st.session_state.session_start_time)
+                            st.session_state.session_files = session_files
+                            
+                            # Use new display function that shows CSV data first, then explain button
+                            display_analysis_results_with_data_files(temp_dir, session_files, final_analyzer_message, st.session_state.current_chat_id)
+                        
+                        # Add completion message
                         with st.chat_message("assistant"):
-                            st.info(f"Task finished. Reason: {message.stop_reason}")
-                        st.session_state.messages.append({"role": "assistant", "content": f"Task finished. Reason: {message.stop_reason}"})
+                            st.success("✅ **Analysis completed successfully!**")
+                        st.session_state.messages.append({
+                            "role": "assistant", 
+                            "content": "✅ **Analysis completed successfully!**"
+                        })
 
             # Save the state after the run
             st.session_state.team_state = await team.save_state()
-
-            # Get session-specific files
-            session_files = get_session_files(temp_dir, st.session_state.files_before_analysis, st.session_state.session_start_time)
-            st.session_state.session_files = session_files
-            
-            # Display only PNG files from current session
-            session_png_files = [f for f in session_files if f.endswith('.png')]
-            if session_png_files:
-                st.success("Graph(s) generated successfully!")
-                for image_file in session_png_files:
-                    image_path = os.path.join(temp_dir, image_file)
-                    img_b64 = get_image_b64(image_path)
-                    st.image(f"data:image/png;base64,{img_b64}", caption=image_file)
-                    st.session_state.messages.append({
-                        "role": "assistant", 
-                        "content": f"![{image_file}](data:image/png;base64,{img_b64})"})
-            else:
-                st.warning("The analysis finished, but no graphs were generated.")
             
             # Force UI refresh to show export panel immediately
             if session_files:
