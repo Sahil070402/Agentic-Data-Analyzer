@@ -1,0 +1,3 @@
+TIMEOUT_DOCKER=300
+WORK_DIR_DOCKER='temp'
+MODEL_GEMINI = 'gemini-2.5-pro'
